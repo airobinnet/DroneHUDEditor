@@ -1,0 +1,19 @@
+# Core dependencies
+PyQt6>=6.4.0
+PyQt6-Qt6>=6.4.0
+PyQt6-tools>=6.4.0  # Includes Qt Designer and other development tools
+opencv-python>=4.7.0
+numpy>=1.21.0
+
+# Video and audio processing
+moviepy>=1.0.3
+pygame>=2.1.0
+ffmpeg-python>=0.2.0
+
+# Mapping and data processing
+folium>=0.12.0
+requests>=2.28.0
+Pillow>=9.0.0
+
+# Optional but recommended for better performance
+opencv-python-headless>=4.7.0  # Lighter alternative to opencv-python for servers
