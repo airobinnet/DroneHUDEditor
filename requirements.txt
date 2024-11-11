@@ -9,6 +9,8 @@ numpy>=1.21.0
 moviepy>=1.0.3
 pygame>=2.1.0
 ffmpeg-python>=0.2.0
+pytube>=12.1.0
+yt-dlp>=2023.3.4
 
 # Mapping and data processing
 folium>=0.12.0

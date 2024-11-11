@@ -5,7 +5,8 @@ from datetime import datetime
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QPushButton, QLabel, QFileDialog, 
                             QSlider, QCheckBox, QProgressDialog, QMessageBox,
-                            QComboBox)
+                            QComboBox, QGroupBox, QTabWidget, QGridLayout,
+                            QDialog, QRadioButton, QLineEdit, QStackedWidget)
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap, QIcon
 import queue
@@ -26,6 +27,9 @@ from moviepy.editor import VideoFileClip
 import tempfile
 import pygame.mixer
 import os
+from pytube import YouTube
+import urllib.request
+import urllib.error
 
 class TelemetryParser:
     """Parses DJI telemetry data from SRT files into structured format"""
@@ -448,21 +452,22 @@ class VideoPlayer:
         self.original_path = None
         self.preview_scale = 0.3  # Scale factor for preview video
 
-    def load_video(self, path):
+    def load_video(self, path, use_preview=True):
+        """Load video file with optional preview generation"""
         self.original_path = path
         
-        # Create preview video
-        self.create_preview_video(path)
-        
+        if use_preview:
+            # Create preview video
+            self.create_preview_video(path)
+            video_path = self.preview_path
+        else:
+            video_path = path
+            self.preview_path = path
+            
         if self.cap is not None:
             self.cap.release()
-        
-        # Use preview video for playback
-        self.cap = cv2.VideoCapture(self.preview_path)
-        
-        # Set OpenCV buffer size
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
-        
+            
+        self.cap = cv2.VideoCapture(video_path)
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.duration = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT) / self.fps * 1000)
         self.timer.setInterval(int(1000 / self.fps))
@@ -1097,176 +1102,218 @@ class DroneHUDApp(QMainWindow):
         # Create main widget and layout
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        layout = QVBoxLayout(main_widget)
+        main_layout = QHBoxLayout(main_widget)
         
-        # Create a container widget for video and overlay
-        video_container = QWidget()
-        container_layout = QVBoxLayout(video_container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center the video widget
+        # Create left panel for HUD settings
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(5, 5, 5, 5)
         
-        # Add video widget
-        container_layout.addWidget(self.video_player.video_widget)
-        
-        # Add video container to main layout
-        layout.addWidget(video_container)
-        
-        # Add HUD controls
-        hud_controls_layout = QHBoxLayout()
+        # Move HUD Settings here
+        # HUD Elements group
+        elements_group = QGroupBox("HUD Elements")
+        elements_layout = QGridLayout()
         
         self.preview_checkbox = QCheckBox("Show HUD")
-        self.preview_checkbox.setChecked(True)
-        self.preview_checkbox.stateChanged.connect(self.toggle_hud_preview)
-        
         self.iso_checkbox = QCheckBox("ISO")
-        self.iso_checkbox.setChecked(True)
-        self.iso_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('iso'))
-        
         self.shutter_checkbox = QCheckBox("Shutter")
-        self.shutter_checkbox.setChecked(True)
-        self.shutter_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('shutter'))
-        
         self.coords_checkbox = QCheckBox("Coordinates")
-        self.coords_checkbox.setChecked(True)
-        self.coords_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('coords'))
-        
         self.altitude_checkbox = QCheckBox("Altitude")
-        self.altitude_checkbox.setChecked(True)
-        self.altitude_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('altitude'))
-        
         self.crosshair_checkbox = QCheckBox("Crosshair")
-        self.crosshair_checkbox.setChecked(True)
-        self.crosshair_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('crosshair'))
-        
         self.compass_checkbox = QCheckBox("Compass")
-        self.compass_checkbox.setChecked(True)
-        self.compass_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('compass'))
-        
         self.speedometer_checkbox = QCheckBox("Speedometer")
-        self.speedometer_checkbox.setChecked(True)
-        self.speedometer_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('speedometer'))
-        
         self.map_checkbox = QCheckBox("Map")
-        self.map_checkbox.setChecked(True)
-        self.map_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('map'))
-        
         self.horizontal_compass_checkbox = QCheckBox("Horizontal Compass")
-        self.horizontal_compass_checkbox.setChecked(True)
+        
+        # Set default states and connect signals
+        for checkbox in [self.preview_checkbox, self.iso_checkbox, self.shutter_checkbox,
+                        self.coords_checkbox, self.altitude_checkbox, self.crosshair_checkbox,
+                        self.compass_checkbox, self.speedometer_checkbox, self.map_checkbox,
+                        self.horizontal_compass_checkbox]:
+            checkbox.setChecked(True)
+            
+        # Connect checkbox signals
+        self.preview_checkbox.stateChanged.connect(self.toggle_hud_preview)
+        self.iso_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('iso'))
+        self.shutter_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('shutter'))
+        self.coords_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('coords'))
+        self.altitude_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('altitude'))
+        self.crosshair_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('crosshair'))
+        self.compass_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('compass'))
+        self.speedometer_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('speedometer'))
+        self.map_checkbox.stateChanged.connect(lambda: self.toggle_hud_element('map'))
         self.horizontal_compass_checkbox.stateChanged.connect(
             lambda: self.toggle_hud_element('horizontal_compass'))
         
-        hud_controls_layout.addWidget(self.preview_checkbox)
-        hud_controls_layout.addWidget(self.iso_checkbox)
-        hud_controls_layout.addWidget(self.shutter_checkbox)
-        hud_controls_layout.addWidget(self.coords_checkbox)
-        hud_controls_layout.addWidget(self.altitude_checkbox)
-        hud_controls_layout.addWidget(self.crosshair_checkbox)
-        hud_controls_layout.addWidget(self.compass_checkbox)
-        hud_controls_layout.addWidget(self.speedometer_checkbox)
-        hud_controls_layout.addWidget(self.map_checkbox)
-        hud_controls_layout.addWidget(self.horizontal_compass_checkbox)
+        # Arrange checkboxes in a grid
+        checkboxes = [
+            (self.preview_checkbox, 0, 0), (self.iso_checkbox, 0, 1),
+            (self.shutter_checkbox, 1, 0), (self.coords_checkbox, 1, 1),
+            (self.altitude_checkbox, 2, 0), (self.crosshair_checkbox, 2, 1),
+            (self.compass_checkbox, 3, 0), (self.speedometer_checkbox, 3, 1),
+            (self.map_checkbox, 4, 0), (self.horizontal_compass_checkbox, 4, 1)
+        ]
         
-        # Add speedometer settings
-        speed_settings_layout = QHBoxLayout()
-        speed_label = QLabel("Max Speed (km/h):")
-        self.speed_combo = QComboBox()
-        speed_options = [30, 40, 50, 60, 70, 80, 90]
-        for speed in speed_options:
-            self.speed_combo.addItem(str(speed))
-        self.speed_combo.setCurrentText("50")  # Default value
-        self.speed_combo.currentTextChanged.connect(self.change_max_speed)
+        for checkbox, row, col in checkboxes:
+            elements_layout.addWidget(checkbox, row, col)
+            
+        elements_group.setLayout(elements_layout)
+        left_layout.addWidget(elements_group)
         
-        speed_settings_layout.addWidget(speed_label)
-        speed_settings_layout.addWidget(self.speed_combo)
-        speed_settings_layout.addStretch()
+        # Theme and Speed Settings group
+        settings_group = QGroupBox("Display Settings")
+        settings_layout = QGridLayout()
         
-        # Add to main layout (after hud_controls_layout)
-        layout.addLayout(speed_settings_layout)
-        
-        # Add theme selector
-        theme_layout = QHBoxLayout()
+        # Theme selector
         theme_label = QLabel("Theme:")
         self.theme_combo = QComboBox()
         for theme in Themes:
             self.theme_combo.addItem(theme.value.name)
         self.theme_combo.currentIndexChanged.connect(self.change_theme)
         
-        theme_layout.addWidget(theme_label)
-        theme_layout.addWidget(self.theme_combo)
-        theme_layout.addStretch()
+        # Speed settings
+        speed_label = QLabel("Max Speed (km/h):")
+        self.speed_combo = QComboBox()
+        speed_options = [30, 40, 50, 60, 70, 80, 90]
+        for speed in speed_options:
+            self.speed_combo.addItem(str(speed))
+        self.speed_combo.setCurrentText("50")
+        self.speed_combo.currentTextChanged.connect(self.change_max_speed)
         
-        # Create markers layout
-        markers_layout = QHBoxLayout()
+        settings_layout.addWidget(theme_label, 0, 0)
+        settings_layout.addWidget(self.theme_combo, 0, 1)
+        settings_layout.addWidget(speed_label, 1, 0)
+        settings_layout.addWidget(self.speed_combo, 1, 1)
         
-        # Add marker controls
-        self.start_marker_btn = QPushButton("Set Start")
-        self.end_marker_btn = QPushButton("Set End")
-        self.start_marker_btn.clicked.connect(self.set_start_marker)
-        self.end_marker_btn.clicked.connect(self.set_end_marker)
+        settings_group.setLayout(settings_layout)
+        left_layout.addWidget(settings_group)
+        left_layout.addStretch()
         
-        self.start_time_label = QLabel("Start: --:--:--")
-        self.end_time_label = QLabel("End: --:--:--")
+        # Set a fixed width for the left panel
+        left_panel.setFixedWidth(300)
+        main_layout.addWidget(left_panel)
         
-        # Initialize marker positions
-        self.start_marker = 0
-        self.end_marker = None
+        # Create right panel for video and controls
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(5, 5, 5, 5)
         
-        markers_layout.addWidget(self.start_marker_btn)
-        markers_layout.addWidget(self.start_time_label)
-        markers_layout.addWidget(self.end_marker_btn)
-        markers_layout.addWidget(self.end_time_label)
-        markers_layout.addStretch()
+        # Add toolbar to right panel
+        toolbar = QHBoxLayout()
         
-        # Create controls
-        controls_layout = QHBoxLayout()
+        # File controls group
+        file_group = QWidget()
+        file_layout = QVBoxLayout(file_group)
+        file_layout.setContentsMargins(5, 5, 5, 5)
         
-        # Add play/pause button
-        self.play_pause_btn = QPushButton("Play")
-        self.play_pause_btn.clicked.connect(self.toggle_playback)
+        # Create horizontal layout for video controls
+        video_controls = QHBoxLayout()
         
-        # File controls
         self.load_video_btn = QPushButton("Load Video")
+        self.load_video_btn.setIcon(QIcon.fromTheme("video-x-generic"))
         self.load_video_btn.clicked.connect(self.load_video)
+        
+        self.use_preview = QCheckBox("Generate preview")
+        self.use_preview.setChecked(True)
+        self.use_preview.setToolTip("Generate a lower resolution preview for smoother playback")
+        
+        video_controls.addWidget(self.load_video_btn)
+        video_controls.addWidget(self.use_preview)
+        file_layout.addLayout(video_controls)
+        
+        # Create horizontal layout for other buttons
+        other_controls = QHBoxLayout()
+        
         self.load_srt_btn = QPushButton("Load SRT")
+        self.load_srt_btn.setIcon(QIcon.fromTheme("text-x-generic"))
         self.load_srt_btn.clicked.connect(self.load_srt)
-        self.load_music_btn = QPushButton("Load Music")  # Add music button
-        self.load_music_btn.clicked.connect(self.load_music)
-
-        # Time display
+        
+        self.load_music_btn = QPushButton("Add Audio")
+        self.load_music_btn.setIcon(QIcon.fromTheme("audio-x-generic"))
+        self.load_music_btn.clicked.connect(self.show_audio_dialog)
+        
+        other_controls.addWidget(self.load_srt_btn)
+        other_controls.addWidget(self.load_music_btn)
+        file_layout.addLayout(other_controls)
+        
+        toolbar.addWidget(file_group)
+        toolbar.addStretch()
+        
+        # Export group
+        export_group = QWidget()
+        export_layout = QHBoxLayout(export_group)
+        export_layout.setContentsMargins(5, 5, 5, 5)
+        
+        self.export_btn = QPushButton("Export")
+        self.export_btn.setIcon(QIcon.fromTheme("document-save"))
+        self.export_btn.clicked.connect(self.export_video)
+        
+        export_layout.addWidget(self.export_btn)
+        toolbar.addWidget(export_group)
+        
+        right_layout.addLayout(toolbar)
+        
+        # Add video container
+        video_container = QWidget()
+        video_layout = QVBoxLayout(video_container)
+        video_layout.setContentsMargins(0, 0, 0, 0)
+        video_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        video_layout.addWidget(self.video_player.video_widget)
+        
+        right_layout.addWidget(video_container)
+        
+        # Add playback controls
+        playback_controls = QWidget()
+        playback_layout = QVBoxLayout(playback_controls)
+        
+        # Time and slider controls
+        time_layout = QHBoxLayout()
         self.time_label = QLabel("00:00:00")
-
-        # Slider
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.valueChanged.connect(self.slider_changed)
-
-        # Export control
-        self.export_btn = QPushButton("Export")
-        self.export_btn.clicked.connect(self.export_video)
-
-        # Add controls to layout
-        controls_layout.addWidget(self.play_pause_btn)
-        controls_layout.addWidget(self.load_video_btn)
-        controls_layout.addWidget(self.load_srt_btn)
-        controls_layout.addWidget(self.load_music_btn)  # Add music button to layout
-        controls_layout.addWidget(self.time_label)
-        controls_layout.addWidget(self.slider)
-        controls_layout.addWidget(self.export_btn)
         
-        # Add all layouts to main layout
-        layout.addLayout(hud_controls_layout)
-        layout.addLayout(theme_layout)
-        layout.addLayout(markers_layout)  # Add markers layout
-        layout.addLayout(controls_layout)
-
-        # Add volume control layout with icon
+        time_layout.addWidget(self.time_label)
+        time_layout.addWidget(self.slider)
+        
+        # Add markers layout
+        markers_layout = QHBoxLayout()
+        
+        # Start marker
+        start_marker_layout = QHBoxLayout()
+        self.start_marker_btn = QPushButton("Set Start")
+        self.start_marker_btn.clicked.connect(self.set_start_marker)
+        self.start_time_label = QLabel("Start: --:--:--")
+        start_marker_layout.addWidget(self.start_marker_btn)
+        start_marker_layout.addWidget(self.start_time_label)
+        
+        # End marker
+        end_marker_layout = QHBoxLayout()
+        self.end_marker_btn = QPushButton("Set End")
+        self.end_marker_btn.clicked.connect(self.set_end_marker)
+        self.end_time_label = QLabel("End: --:--:--")
+        end_marker_layout.addWidget(self.end_marker_btn)
+        end_marker_layout.addWidget(self.end_time_label)
+        
+        markers_layout.addLayout(start_marker_layout)
+        markers_layout.addStretch()
+        markers_layout.addLayout(end_marker_layout)
+        
+        # Initialize marker variables
+        self.start_marker = None
+        self.end_marker = None
+        
+        # Play controls
+        controls_layout = QHBoxLayout()
+        self.play_pause_btn = QPushButton("Play")
+        self.play_pause_btn.setIcon(QIcon.fromTheme("media-playback-start"))
+        self.play_pause_btn.clicked.connect(self.toggle_playback)
+        
+        # Volume controls
         volume_layout = QHBoxLayout()
-        
-        # Add volume icon button
         self.volume_btn = QPushButton()
         self.volume_btn.setFixedSize(24, 24)
         self.volume_btn.clicked.connect(self.toggle_mute)
         
-        volume_label = QLabel("Volume:")
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
@@ -1274,15 +1321,60 @@ class DroneHUDApp(QMainWindow):
         self.volume_slider.valueChanged.connect(self.change_volume)
         
         volume_layout.addWidget(self.volume_btn)
-        volume_layout.addWidget(volume_label)
         volume_layout.addWidget(self.volume_slider)
-        volume_layout.addStretch()
         
-        # Update volume icon
-        self.update_volume_icon(50)
+        controls_layout.addWidget(self.play_pause_btn)
+        controls_layout.addLayout(volume_layout)
+        controls_layout.addStretch()
         
-        # Add volume layout to main layout (after controls_layout)
-        layout.addLayout(volume_layout)
+        playback_layout.addLayout(time_layout)
+        playback_layout.addLayout(markers_layout)
+        playback_layout.addLayout(controls_layout)
+        
+        right_layout.addWidget(playback_controls)
+        
+        main_layout.addWidget(right_panel)
+        
+        # Set window style
+        self.setStyleSheet("""
+            QMainWindow {
+                background: #f0f0f0;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #cccccc;
+                border-radius: 6px;
+                margin-top: 6px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 7px;
+                padding: 0px 5px 0px 5px;
+            }
+            QPushButton {
+                padding: 5px 10px;
+                border-radius: 4px;
+                background: #ffffff;
+            }
+            QPushButton:hover {
+                background: #e0e0e0;
+            }
+            QSlider::groove:horizontal {
+                border: 1px solid #999999;
+                height: 8px;
+                background: #ffffff;
+                margin: 2px 0;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #4A90E2;
+                border: 1px solid #5c5c5c;
+                width: 18px;
+                margin: -2px 0;
+                border-radius: 3px;
+            }
+        """)
 
     def toggle_playback(self):
         if self.video_player.is_playing:
@@ -1313,7 +1405,8 @@ class DroneHUDApp(QMainWindow):
                                                  "Video Files (*.mp4 *.avi)")
         if file_name:
             self.video_path = file_name
-            self.video_player.load_video(file_name)
+            # Pass the preview setting to the video player
+            self.video_player.load_video(file_name, self.use_preview.isChecked())
             self.slider.setMaximum(self.video_player.get_duration())
             
             # Load video audio
@@ -1721,6 +1814,214 @@ class DroneHUDApp(QMainWindow):
         else:
             self.last_volume = self.volume_slider.value()
             self.volume_slider.setValue(0)
+
+    def show_audio_dialog(self):
+        """Show dialog for selecting audio source"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Audio")
+        layout = QVBoxLayout(dialog)
+        
+        # Create radio buttons for selection
+        local_radio = QRadioButton("Local Audio File")
+        youtube_radio = QRadioButton("YouTube URL")
+        local_radio.setChecked(True)
+        
+        # Create stacked widget for different inputs
+        stack = QStackedWidget()
+        
+        # Local file page
+        local_page = QWidget()
+        local_layout = QVBoxLayout(local_page)
+        local_layout.addWidget(QLabel("Select a local audio file (MP3, WAV, M4A)"))
+        browse_btn = QPushButton("Browse...")
+        local_layout.addWidget(browse_btn)
+        local_layout.addStretch()
+        
+        # YouTube page
+        youtube_page = QWidget()
+        youtube_layout = QVBoxLayout(youtube_page)
+        youtube_layout.addWidget(QLabel("Enter YouTube URL:"))
+        url_input = QLineEdit()
+        youtube_layout.addWidget(url_input)
+        youtube_layout.addStretch()
+        
+        # Add pages to stack
+        stack.addWidget(local_page)
+        stack.addWidget(youtube_page)
+        
+        # Create radio button group
+        radio_layout = QVBoxLayout()
+        radio_layout.addWidget(local_radio)
+        radio_layout.addWidget(youtube_radio)
+        
+        # Add widgets to dialog
+        layout.addLayout(radio_layout)
+        layout.addWidget(stack)
+        
+        # Add buttons
+        button_box = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Cancel")
+        button_box.addWidget(ok_button)
+        button_box.addWidget(cancel_button)
+        layout.addLayout(button_box)
+        
+        # Connect signals
+        def update_stack():
+            stack.setCurrentIndex(1 if youtube_radio.isChecked() else 0)
+        
+        local_radio.toggled.connect(update_stack)
+        youtube_radio.toggled.connect(update_stack)
+        
+        cancel_button.clicked.connect(dialog.reject)
+        ok_button.clicked.connect(dialog.accept)
+        browse_btn.clicked.connect(lambda: self.browse_audio_file(dialog))
+        
+        # Show dialog
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if youtube_radio.isChecked():
+                url = url_input.text().strip()
+                if url:
+                    self.download_youtube_audio(url)
+            elif hasattr(dialog, 'selected_file'):
+                self.load_audio_file(dialog.selected_file)
+
+    def browse_audio_file(self, dialog):
+        """Browse for local audio file"""
+        file_name, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Audio File",
+            "",
+            "Audio Files (*.mp3 *.wav *.m4a)"
+        )
+        if file_name:
+            dialog.selected_file = file_name
+            dialog.accept()
+
+    def load_audio_file(self, file_path):
+        """Load local audio file"""
+        if self.video_player.load_music(file_path):
+            self.music_path = file_path
+            music_name = os.path.basename(file_path)
+            QMessageBox.information(self, "Audio Loaded", 
+                                  f"Audio file loaded: {music_name}\n\n"
+                                  "The audio will be added during export.")
+        else:
+            QMessageBox.warning(self, "Audio Load Failed", 
+                              "Failed to load audio file.")
+
+    def download_youtube_audio(self, url):
+        """Download audio from YouTube URL"""
+        try:
+            progress = QProgressDialog("Downloading YouTube audio...", "Cancel", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            
+            # Create temp directory first
+            temp_dir = os.path.join(tempfile.gettempdir(), 'drone_hud_audio')
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            def sanitize_filename(filename):
+                return re.sub(r'[\\/*?:"<>|]', "", filename)
+            
+            def download_with_pytube():
+                try:
+                    yt = YouTube(url)
+                    title = sanitize_filename(yt.title)
+                    
+                    # Get highest quality audio stream
+                    audio_stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
+                    if not audio_stream:
+                        raise Exception("No audio stream found")
+                    
+                    # Download audio
+                    output_file = os.path.join(temp_dir, f"{title}.mp3")
+                    downloaded_file = audio_stream.download(output_path=temp_dir, filename=f"{title}_temp")
+                    
+                    # Convert to mp3 using moviepy
+                    audio_clip = AudioFileClip(downloaded_file)
+                    audio_clip.write_audiofile(output_file)
+                    audio_clip.close()
+                    
+                    # Clean up temp file
+                    os.remove(downloaded_file)
+                    return output_file
+                    
+                except Exception as e:
+                    print(f"Pytube download failed: {str(e)}")
+                    return None
+            
+            def download_with_ytdlp():
+                try:
+                    import yt_dlp
+                    
+                    ydl_opts = {
+                        'format': 'bestaudio/best',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                        'progress_hooks': [
+                            lambda d: progress.setValue(
+                                int(d.get('downloaded_bytes', 0) * 100 / d.get('total_bytes', 100))
+                                if d.get('total_bytes') else 0
+                            )
+                        ],
+                        'keepvideo': False,  # Don't keep the original file
+                        'nocheckcertificate': True,
+                    }
+                    
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Extract info first to get the final filename
+                        info = ydl.extract_info(url, download=False)
+                        title = sanitize_filename(info.get('title', 'audio'))
+                        mp3_path = os.path.join(temp_dir, f"{title}.mp3")
+                        
+                        # If MP3 already exists, remove it
+                        if os.path.exists(mp3_path):
+                            os.remove(mp3_path)
+                        
+                        # Now download and convert
+                        ydl.download([url])
+                        
+                        # Verify the MP3 file exists
+                        if os.path.exists(mp3_path):
+                            return mp3_path
+                        else:
+                            raise Exception("MP3 file not found after download")
+                        
+                except Exception as e:
+                    print(f"yt-dlp download failed: {str(e)}")
+                    return None
+            
+            # Try both methods
+            audio_file = download_with_pytube()
+            if not audio_file:
+                audio_file = download_with_ytdlp()
+            
+            if not audio_file:
+                raise Exception("Both download methods failed")
+            
+            progress.close()
+            
+            # Load the downloaded audio
+            self.load_audio_file(audio_file)
+            
+        except Exception as e:
+            progress.close()
+            error_message = (
+                f"Error downloading YouTube audio:\n{str(e)}\n\n"
+                "This could be due to:\n"
+                "- Invalid or private URL\n"
+                "- Missing ffmpeg (needed for conversion)\n"
+                "- Network connection issues\n\n"
+                "Please try:\n"
+                "1. Installing ffmpeg\n"
+                "2. Using a different URL\n"
+                "3. Using a local audio file instead"
+            )
+            QMessageBox.critical(self, "Download Error", error_message)
 
 class HUDOverlay(QWidget):
     def __init__(self, parent=None):
