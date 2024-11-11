@@ -50,16 +50,20 @@ A professional heads-up display (HUD) overlay editor for DJI drone videos, integ
 ## Installation
 
 1. Clone the repository:
+```bash
+git clone https://github.com/airobinnet/DroneHUDEditor.git
+cd DroneHUDEditor
 ```
-bash
-git clone https://github.com/airobinnet/drone-hud-editor.git
-cd drone-hud-editor
+
+1a. (Optional) Create a new virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate
 ```
 
 2. Install required dependencies:
 
-```
-bash
+```bash
 pip install -r requirements.txt
 ```
 
@@ -67,8 +71,7 @@ pip install -r requirements.txt
 ## Usage
 
 1. **Launch the Application**:
-```
-bash
+```bash
 python main.py
 ```
 
